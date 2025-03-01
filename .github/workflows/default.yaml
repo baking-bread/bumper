@@ -1,0 +1,19 @@
+name: default
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    uses: baking-bread/flows/.github/workflows/golang-test.yaml@main
+    with:
+      golang_version: "1.22.2"
+  scan:
+    uses: baking-bread/flows/.github/workflows/golang-scan.yaml@main
+    with:
+      golang_version: "1.22.2"

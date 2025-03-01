@@ -1,0 +1,19 @@
+name: release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+jobs:
+  build:
+    uses: baking-bread/flows/.github/workflows/golang-build.yaml@main
+    with:
+      golang_version: "1.22.2"
+      executable_name: "bumper"
+  release:
+    needs: build
+    uses: baking-bread/flows/.github/workflows/golang-release.yaml@main
+    with:
+      golang_version: "1.22.2"
+      artifact_run_id: ${{ needs.build.outputs.workflow_run_id}}
