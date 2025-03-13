@@ -3,50 +3,67 @@ package version
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
-	"strings"
-
-	"github.com/sirupsen/logrus"
 )
 
 type SemVer struct {
-	Major  int
-	Minor  int
-	Patch  int
-	log    *logrus.Logger
-	dryRun bool
-	force  bool
+	Major      int
+	Minor      int
+	Patch      int
+	PreRelease string // optional
+	Build      string // optional
 }
 
-func NewSemVer(log *logrus.Logger, dryRun bool, force bool) *SemVer {
+// https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+// https://regex101.com/
+var semverRegexp = regexp.MustCompile(`(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?`)
+
+func NewSemVer(major int, minor int, patch int, pre_release string, build string) *SemVer {
 	return &SemVer{
-		log:    log,
-		dryRun: dryRun,
-		force:  force,
+		Major:      major,
+		Minor:      minor,
+		Patch:      patch,
+		PreRelease: pre_release,
+		Build:      build,
 	}
 }
 
-func (sv *SemVer) Parse(version string) error {
-	version = strings.TrimPrefix(version, "v")
-	parts := strings.Split(version, ".")
-	if len(parts) != 3 {
-		return errors.New("invalid version format")
+func Parse(version string) (*SemVer, error) {
+	var result = &SemVer{}
+
+	// parse using regexp
+
+	// matches only the left most version matched
+	// should we match all? and check if we only found one version?
+	matches := semverRegexp.FindStringSubmatch(version)
+	if matches == nil {
+		return nil, fmt.Errorf("could not parse version from %s", version)
 	}
 
+	// regex should make sure, that there is no error
 	var err error
-	if sv.Major, err = strconv.Atoi(parts[0]); err != nil {
-		return err
+	if result.Major, err = strconv.Atoi(matches[1]); err != nil {
+		return nil, fmt.Errorf("could not parse major version from %s", version)
 	}
-	if sv.Minor, err = strconv.Atoi(parts[1]); err != nil {
-		return err
+	if result.Minor, err = strconv.Atoi(matches[2]); err != nil {
+		return nil, fmt.Errorf("could not parse pathc version from %s", version)
 	}
-	if sv.Patch, err = strconv.Atoi(parts[2]); err != nil {
-		return err
+	if result.Patch, err = strconv.Atoi(matches[3]); err != nil {
+		return nil, fmt.Errorf("could not parse patch version from %s", version)
 	}
+	result.PreRelease = matches[4]
+	result.Build = matches[5]
 
-	return nil
+	return result, nil
 }
 
+func Replace(version string, update string) string {
+	return semverRegexp.ReplaceAllString(version, update)
+}
+
+// compares version by major, minor and patch numbers
+// does not compare with pre releases
 func (sv *SemVer) Compare(other *SemVer) int {
 	if sv.Major != other.Major {
 		return sv.Major - other.Major
@@ -58,50 +75,23 @@ func (sv *SemVer) Compare(other *SemVer) int {
 }
 
 func (sv *SemVer) Bump(bumpType string) error {
-	oldVer := &SemVer{
-		Major: sv.Major,
-		Minor: sv.Minor,
-		Patch: sv.Patch,
-	}
-
-	newVer := &SemVer{
-		Major: sv.Major,
-		Minor: sv.Minor,
-		Patch: sv.Patch,
-	}
-
 	switch bumpType {
 	case "patch":
-		newVer.Patch++
+		sv.Patch++
 	case "minor":
-		newVer.Minor++
-		newVer.Patch = 0
+		sv.Minor++
+		sv.Patch = 0
 	case "major":
-		newVer.Major++
-		newVer.Minor = 0
-		newVer.Patch = 0
+		sv.Major++
+		sv.Minor = 0
+		sv.Patch = 0
 	default:
 		return errors.New("invalid bump type")
 	}
 
-	if newVer.Compare(oldVer) < 0 && !sv.force {
-		sv.log.Errorf("Attempting to downgrade version from %s to %s. Use --force to override.", oldVer.String(), newVer.String())
-		return errors.New("version downgrade detected. Use --force to override")
-	}
-
-	if sv.dryRun {
-		sv.log.Info("Dry-run mode enabled. No changes will be applied.")
-		sv.log.Infof("Would bump version to: %s", newVer.String())
-		return nil
-	}
-
-	sv.Major = newVer.Major
-	sv.Minor = newVer.Minor
-	sv.Patch = newVer.Patch
-	sv.log.Infof("Bumped version to: %s", sv.String())
 	return nil
 }
 
 func (sv *SemVer) String() string {
-	return fmt.Sprintf("v%d.%d.%d", sv.Major, sv.Minor, sv.Patch)
+	return fmt.Sprintf("%d.%d.%d%s%s", sv.Major, sv.Minor, sv.Patch, sv.PreRelease, sv.Build)
 }
